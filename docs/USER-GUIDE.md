@@ -64,7 +64,7 @@ Keep the apps that matter most running smoothly.
 - Core Windows processes can't be added.
 
 ## 7. Updating
-Edit `src\TaskManagerLite.cs` and raise `Version` (for example `2.1.0` → `2.1.1`). Within 30 minutes, or at the next start, the app rebuilds itself and restarts. If the build fails, the current version keeps running and the error is shown in Settings and `data\update.log`.
+Edit `src\TaskManagerLite.cs` and raise `Version` (for example `2.2.0` → `2.2.1`). Within 30 minutes, or at the next start, the app rebuilds itself and restarts. If the build fails, the current version keeps running and the error is shown in Settings and `data\update.log`.
 
 ## 8. Troubleshooting
 | Problem | Fix |

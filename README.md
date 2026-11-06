@@ -56,6 +56,7 @@ Command line: `--page N` (0 Processes, 1 Advisor, 2 Ask AI, 3 Settings, 4 Free u
 - No telemetry, no accounts, no background network traffic.
 - **Ask AI** sends a snapshot (process names and resource numbers) to Anthropic through **your own** Claude Code sign-in, only when you ask. Details: [PRIVACY.md](PRIVACY.md).
 - Core Windows processes are protected from being ended. Admin rights are requested only to clear cached memory. Details: [SECURITY.md](SECURITY.md).
+- Every release is double-checked (files, checksums, a clean install from the GitHub download, and feature tests): see the **[Verification Report](docs/VERIFICATION.md)**.
 
 ## Uninstall
 
