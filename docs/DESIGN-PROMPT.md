@@ -16,6 +16,8 @@
 - "Clear cached memory": purges the standby list (NtSetSystemInformation with MemoryPurgeStandbyList). Needs admin, so the app restarts itself elevated with `--purge`. The UI explains that cached memory isn't wasted.
 - Junk files: user temp files (older than 1 day), Windows temp (admin), crash dumps, error reports, and the Recycle Bin (opt-in, with a confirmation). Files in use are skipped.
 
+**Priority apps (v2.2):** a customizable list of apps with a fixed priority (High, Above normal, Below normal or Low), with Add/update and Delete in Settings, plus right-click → Add to priority apps. Rules are applied once per process on each refresh. Apps above Normal are excluded from auto-lower and trim. The default rule is chrome → Above normal. Stored in settings.ini as `priorityapps=name:Level|...`.
+
 **Auto update:** watches src\TaskManagerLite.cs. When `Version` is raised (or the source changes), it rebuilds with the built-in C# compiler, swaps the .exe and restarts itself. This happens automatically, or with one click.
 
 **UI:** sidebar navigation (Processes, Smart Advisor, Ask AI, Settings), light, dark or match-Windows theme with a dark title bar, tray icon, single instance, settings remembered, F5 to refresh, Ctrl+F to search.

@@ -13,7 +13,8 @@ Built for PCs that run many heavy apps at once (VS Code, AI assistants, browsers
 | **Processes** | CPU, RAM and committed-memory tiles with history graphs. Process list with heat shading, sort, search and **Group by app**. A details panel explains what each process is and whether it's safe to end. |
 | **Smart Advisor** | Offline health score (0–100) with fixes for: memory nearly full, sustained high CPU, apps not responding, memory leaks, low disk space, a small page file, and more. |
 | **Ask AI** | Ask questions such as "Why is my PC slow?" and get answers from Claude based on a live snapshot. Claude can't run commands or change anything. |
-| **Auto-troubleshoot** | Optional: tray alerts, lowering the priority of background CPU hogs, giving Chrome priority, and trimming background apps when RAM is above 85%. Every action is logged. |
+| **Priority apps** | Your own list of apps with a fixed priority (High, Above normal, Below normal or Low), with **Add / update** and **Delete**, or right-click a process → *Add to priority apps*. Apps you raise get the CPU first and are never auto-lowered or trimmed. Chrome (for Quantman) is the default. |
+| **Auto-troubleshoot** | Optional: tray alerts, lowering the priority of background CPU hogs, applying your priority apps, and trimming background apps when RAM is above 85%. Every action is logged. |
 | **Free up memory** | Memory composition bar, **Trim background apps**, **Clear cached memory** (admin), and junk-file cleanup (temp files, crash dumps, error reports, Recycle Bin). |
 | **Self-update** | Rebuilds itself from `src\` when the version number in the source goes up. |
 | **Comfort** | Light, dark or match-Windows theme, tray icon, start with Windows, single instance, remembered settings. |
@@ -28,7 +29,7 @@ More screenshots: [Smart Advisor](docs/screenshots/smart-advisor.png) · [Ask AI
 
 ## Install
 
-1. Download `TaskManagerLite-v2.1.0-win-x64.zip` from **Releases**.
+1. Download `TaskManagerLite-v2.2.0-win-x64.zip` from **Releases**.
 2. Extract it to a folder in your user profile, for example `%USERPROFILE%\Tools\TaskManagerLite`.
 3. Run `TaskManagerLite.exe`. The program isn't code-signed, so Windows SmartScreen may warn you: choose **More info → Run anyway**.
 

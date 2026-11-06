@@ -34,7 +34,7 @@ namespace TaskManagerLite
     static class AppInfo
     {
         // Raise this number when you change the code; the running app then offers (or installs) the update.
-        public const string Version = "2.1.0";
+        public const string Version = "2.2.0";
         public const string Name = "Task Manager Lite";
     }
 
@@ -752,7 +752,123 @@ namespace TaskManagerLite
         // Advisor page
         readonly Label lblHealth = new Label(), lblHealthTitle = new Label(), lblHealthSub = new Label();
         readonly CheckBox chkNotify = UI.Chk("Notify me about problems"), chkAutoLower = UI.Chk("Auto-lower background CPU hogs"),
-                          chkBoost = UI.Chk("Give Chrome (Quantman) priority");
+                          chkBoost = UI.Chk("Apply my app priority rules");
+
+        // App priority rules (Settings → App priority rules)
+        class PriorityRule { public string Name; public ProcessPriorityClass Level; }
+        static readonly string[] LevelNames = { "High", "Above normal", "Below normal", "Low" };
+        static readonly ProcessPriorityClass[] LevelValues = {
+            ProcessPriorityClass.High, ProcessPriorityClass.AboveNormal, ProcessPriorityClass.BelowNormal, ProcessPriorityClass.Idle };
+        readonly List<PriorityRule> rules = new List<PriorityRule>();
+        readonly HashSet<string> ruleApplied = new HashSet<string>();   // "pid:level" already applied (or refused), so each process is set once
+        readonly ListView lvRules = new ListView();
+        readonly TextBox txtRuleName = new TextBox();
+        readonly ComboBox cbRuleLevel = new ComboBox();
+        readonly Label lblRules = new Label();
+        readonly CheckBox chkBoostMirror = UI.Chk("Apply my priority apps (same switch as in Smart Advisor)");
+        bool syncingBoost;
+
+        PriorityRule RuleFor(string name)
+        {
+            foreach (var r in rules) if (string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase)) return r;
+            return null;
+        }
+
+        bool IsBoosted(string name)
+        {
+            var r = RuleFor(name);
+            return r != null && (r.Level == ProcessPriorityClass.High || r.Level == ProcessPriorityClass.AboveNormal);
+        }
+
+        static string LevelText(ProcessPriorityClass c)
+        {
+            switch (c)
+            {
+                case ProcessPriorityClass.High: return "High";
+                case ProcessPriorityClass.AboveNormal: return "Above normal";
+                case ProcessPriorityClass.BelowNormal: return "Below normal";
+                case ProcessPriorityClass.Idle: return "Low";
+                default: return "Normal";
+            }
+        }
+
+        void RefreshRulesList()
+        {
+            lvRules.BeginUpdate();
+            lvRules.Items.Clear();
+            foreach (var r in rules.OrderBy(x => Array.IndexOf(LevelValues, x.Level)).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                var it = new ListViewItem(r.Name) { Tag = r };
+                it.SubItems.Add(LevelText(r.Level));
+                lvRules.Items.Add(it);
+            }
+            lvRules.EndUpdate();
+            if (rules.Count == 0) lblRules.Text = "No priority apps yet. Type an app name, choose a priority and click Add.";
+        }
+
+        void AddRuleFromUi()
+        {
+            int i = Math.Max(0, cbRuleLevel.SelectedIndex);
+            AddRule(txtRuleName.Text, LevelValues[i]);
+        }
+
+        void AddRule(string name, ProcessPriorityClass level)
+        {
+            name = (name ?? "").Trim().Trim('"');
+            if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) name = name.Substring(0, name.Length - 4);
+            if (name.Length == 0) { lblRules.Text = "Type an app name first (as shown in the Processes list, e.g. chrome, Code, python)."; return; }
+            if (name.IndexOfAny(new[] { ':', '|', '=' }) >= 0) { lblRules.Text = "App names can't contain : | or =."; return; }
+            if (Protected.Contains(name))
+            {
+                lblRules.Text = name + " is part of Windows, so its priority can't be changed here.";
+                return;
+            }
+            if (level == ProcessPriorityClass.High &&
+                MessageBox.Show(this, "High priority makes " + name + " win over almost everything else. If it gets busy, Windows can feel unresponsive.\n\nUse High anyway? (Above normal is usually enough.)",
+                    "Priority apps", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            var existing = RuleFor(name);
+            if (existing != null) existing.Level = level; else rules.Add(new PriorityRule { Name = name, Level = level });
+            ruleApplied.Clear();   // apply again to running processes
+            bool wasOff = !chkBoost.Checked;
+            chkBoost.Checked = true;   // adding a rule means you want it applied
+            RefreshRulesList();
+            SaveSettings();
+            bool running = lastRows.Any(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase));
+            lblRules.Text = string.Format("{0} {1}: {2}.{3}{4}", existing != null ? "Updated" : "Added", name, LevelText(level),
+                running ? " Applied to the running app now." : " It isn't running now; the rule applies when it starts.",
+                wasOff ? " (Priority apps were switched on.)" : "");
+            Log(string.Format("Priority app {0}: {1} → {2}.", existing != null ? "updated" : "added", name, LevelText(level)));
+            txtRuleName.Clear();
+            DoRefresh();
+        }
+
+        void DeleteSelectedRules()
+        {
+            var names = lvRules.SelectedItems.Cast<ListViewItem>().Select(it => ((PriorityRule)it.Tag).Name).ToList();
+            if (names.Count == 0) { lblRules.Text = "Select an app in the list to delete it."; return; }
+            rules.RemoveAll(r => names.Contains(r.Name, StringComparer.OrdinalIgnoreCase));
+            var restore = MessageBox.Show(this, "Deleted: " + string.Join(", ", names) + ".\n\nAlso set the running copies back to Normal priority now?",
+                "Priority apps", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+            int n = 0;
+            if (restore)
+                foreach (var r in lastRows.Where(x => names.Contains(x.Name, StringComparer.OrdinalIgnoreCase)))
+                {
+                    try { using (var p = Process.GetProcessById(r.Pid)) { p.PriorityClass = ProcessPriorityClass.Normal; n++; } } catch { }
+                }
+            ruleApplied.Clear();
+            RefreshRulesList();
+            SaveSettings();
+            lblRules.Text = "Deleted " + string.Join(", ", names) + "." + (restore ? " " + n + " running process(es) set back to Normal." : " Running copies keep their priority until they restart.");
+            Log("Priority app deleted: " + string.Join(", ", names) + (restore ? " (set back to Normal)." : "."));
+            DoRefresh();
+        }
+
+        void AddSelectedToRules(ProcessPriorityClass level)
+        {
+            var names = SelectedRows().Select(r => r.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            foreach (var n in names) AddRule(n, level);
+            if (names.Count > 0) { ShowPage(3); lvRules.Focus(); }
+        }
         readonly FlowLayoutPanel cards = new FlowLayoutPanel();
         readonly TextBox logBox = new TextBox();
         List<Finding> findings = new List<Finding>();
@@ -913,6 +1029,10 @@ namespace TaskManagerLite
             FormClosing += delegate { SaveSettings(); CancelAi(false); };
             FormClosed += delegate { tray.Visible = false; tray.Dispose(); };
 
+            // the priority-apps switch appears in Smart Advisor and in Settings; keep both in sync
+            chkBoost.CheckedChanged += delegate { if (syncingBoost) return; syncingBoost = true; chkBoostMirror.Checked = chkBoost.Checked; syncingBoost = false; };
+            chkBoostMirror.CheckedChanged += delegate { if (syncingBoost) return; syncingBoost = true; chkBoost.Checked = chkBoostMirror.Checked; syncingBoost = false; };
+
             loading = true;
             LoadSettings();
             loading = false;
@@ -993,6 +1113,15 @@ namespace TaskManagerLite
             AddPriority(prio, "Above normal", ProcessPriorityClass.AboveNormal);
             AddPriority(prio, "High", ProcessPriorityClass.High);
             menu.Items.Add(prio);
+            var addRule = new ToolStripMenuItem("Add to priority apps");
+            for (int li = 0; li < LevelNames.Length; li++)
+            {
+                var level = LevelValues[li];
+                var item = new ToolStripMenuItem(LevelNames[li] + (li == 1 ? "  (recommended)" : ""));
+                item.Click += delegate { AddSelectedToRules(level); };
+                addRule.DropDownItems.Add(item);
+            }
+            menu.Items.Add(addRule);
             menu.Items.Add("Ask AI about it", null, delegate { AskAboutSelected(); });
             menu.Items.Add("Open file location", null, delegate { OpenLocation(); });
             menu.Items.Add("Search online", null, delegate { SearchOnline(); });
@@ -1143,6 +1272,43 @@ namespace TaskManagerLite
             col.Controls.Add(row("Claude model", cbModel));
             col.Controls.Add(new Label { Text = "Claude Code: " + (ClaudePath() ?? "not found – install Claude Code to use Ask AI"), AutoSize = true, Tag = "sub", Margin = new Padding(0, 4, 0, 0) });
 
+            // ---- App priority rules (add / delete)
+            col.Controls.Add(section("Priority apps (add / delete)"));
+            col.Controls.Add(new Label
+            {
+                AutoSize = true, MaximumSize = new Size(760, 0), Tag = "sub", Margin = new Padding(0, 0, 0, 6),
+                Text = "Keep chosen apps at a fixed priority. Apps set to High or Above normal get the CPU first and are never auto-lowered or trimmed. " +
+                       "Set background apps (for example python for Hermes) to Below normal or Low. Tip: right-click a process → Add to priority apps."
+            });
+            lvRules.View = View.Details; lvRules.FullRowSelect = true; lvRules.HideSelection = false; lvRules.MultiSelect = true;
+            lvRules.HeaderStyle = ColumnHeaderStyle.Nonclickable; lvRules.BorderStyle = BorderStyle.FixedSingle;
+            lvRules.Width = 470; lvRules.Height = 140; lvRules.Margin = new Padding(0, 2, 0, 6);
+            lvRules.Columns.Add("App (process name)", 270);
+            lvRules.Columns.Add("Priority", 175);
+            lvRules.KeyDown += (s, e) => { if (e.KeyCode == Keys.Delete) DeleteSelectedRules(); };
+            lvRules.SelectedIndexChanged += delegate
+            {
+                if (lvRules.SelectedItems.Count != 1) return;
+                var r = (PriorityRule)lvRules.SelectedItems[0].Tag;
+                txtRuleName.Text = r.Name;
+                cbRuleLevel.SelectedIndex = Math.Max(0, Array.IndexOf(LevelValues, r.Level));
+            };
+            col.Controls.Add(lvRules);
+            var ruleRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+            txtRuleName.Width = 200; txtRuleName.Margin = new Padding(0, 4, 8, 0);
+            txtRuleName.HandleCreated += delegate { Native.SetCue(txtRuleName, "App name, e.g. chrome"); };
+            txtRuleName.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; AddRuleFromUi(); } };
+            cbRuleLevel.DropDownStyle = ComboBoxStyle.DropDownList; cbRuleLevel.Width = 130; cbRuleLevel.Margin = new Padding(0, 4, 8, 0);
+            cbRuleLevel.Items.AddRange(LevelNames);
+            cbRuleLevel.SelectedIndex = 1;   // Above normal
+            var bAddRule = UI.Btn("Add / update", true); bAddRule.Click += delegate { AddRuleFromUi(); };
+            var bDelRule = UI.Btn("Delete selected", false); bDelRule.Click += delegate { DeleteSelectedRules(); };
+            ruleRow.Controls.AddRange(new Control[] { txtRuleName, cbRuleLevel, bAddRule, bDelRule });
+            col.Controls.Add(ruleRow);
+            col.Controls.Add(chkBoostMirror);
+            lblRules.AutoSize = true; lblRules.MaximumSize = new Size(760, 0); lblRules.Tag = "sub"; lblRules.Margin = new Padding(0, 4, 0, 0);
+            col.Controls.Add(lblRules);
+
             col.Controls.Add(section("Updates"));
             col.Controls.Add(chkAutoUpdate);
             lblUpdate.AutoSize = true; lblUpdate.MaximumSize = new Size(760, 0); lblUpdate.Tag = "sub"; lblUpdate.Margin = new Padding(0, 6, 0, 6);
@@ -1276,7 +1442,8 @@ namespace TaskManagerLite
             bool incChrome = chkTrimChrome.Checked;
             var targets = rows.Where(r => r.WorkingSet >= 20L * 1048576 && r.Pid > 4 && r.Pid != self && !Protected.Contains(r.Name) &&
                                           !string.Equals(r.Name, fgName, StringComparison.OrdinalIgnoreCase) &&
-                                          (incChrome || !r.Name.Equals("chrome", StringComparison.OrdinalIgnoreCase))).ToList();
+                                          (incChrome || !r.Name.Equals("chrome", StringComparison.OrdinalIgnoreCase)) &&
+                                          !IsBoosted(r.Name)).ToList();   // never trim apps you gave high priority
             long before = targets.Sum(r => r.WorkingSet);
             ThreadPool.QueueUserWorkItem(_ =>
             {
@@ -1297,7 +1464,8 @@ namespace TaskManagerLite
                         var ids = new HashSet<int>(targets.Select(x => x.Pid));
                         long after = lastRows.Where(r => ids.Contains(r.Pid)).Sum(r => r.WorkingSet);
                         long freed = Math.Max(0, before - after);
-                        string skipped = "Windows processes" + (fgName != null ? ", " + fgName + " (in use)" : "") + (incChrome ? "" : ", Chrome");
+                        string skipped = "Windows processes" + (fgName != null ? ", " + fgName + " (in use)" : "") + (incChrome ? "" : ", Chrome") +
+                                         (rules.Any(x => x.Level == ProcessPriorityClass.High || x.Level == ProcessPriorityClass.AboveNormal) ? ", your priority apps" : "");
                         lblMemResult.Text = string.Format("Trimmed {0} background process(es): {1:#,0} MB moved out of RAM. Skipped: {2}. " +
                                                           "Apps refill memory as you use them; that's normal.", ok, freed / 1048576.0, skipped);
                         Log(string.Format("Trimmed {0} background process(es), {1:#,0} MB moved out of RAM.", ok, freed / 1048576.0));
@@ -1503,7 +1671,7 @@ namespace TaskManagerLite
             StyleTree(this);
             if (IsHandleCreated) Native.DarkTitleBar(Handle, T.Dark);
             if (lv.IsHandleCreated) Native.SetWindowTheme(lv.Handle, T.Dark ? "DarkMode_Explorer" : "Explorer", null);
-            foreach (var tb in new Control[] { logBox, txtQ, cards, rtb })
+            foreach (var tb in new Control[] { logBox, txtQ, cards, rtb, lvRules })
                 if (tb.IsHandleCreated) Native.SetWindowTheme(tb.Handle, T.Dark ? "DarkMode_Explorer" : "Explorer", null);
             if (lastAnswer != null) RenderMarkdown(lastAnswer); else if (rtb.TextLength == 0) ShowAiWelcome();
             Invalidate(true);
@@ -2257,15 +2425,30 @@ namespace TaskManagerLite
         {
             int self;
             using (var me = Process.GetCurrentProcess()) self = me.Id;
-            if (chkBoost.Checked)
+            if (chkBoost.Checked && rules.Count > 0)
             {
-                int n = 0;
-                foreach (var r in lastRows.Where(x => x.Name.Equals("chrome", StringComparison.OrdinalIgnoreCase) && x.Priority == "Normal" && !boosted.Contains(x.Pid)))
+                var changed = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                foreach (var r in lastRows)
                 {
-                    boosted.Add(r.Pid);
-                    try { using (var p = Process.GetProcessById(r.Pid)) { p.PriorityClass = ProcessPriorityClass.AboveNormal; n++; } } catch { }
+                    var rule = RuleFor(r.Name);
+                    if (rule == null || r.Priority == LevelText(rule.Level)) continue;
+                    string key = r.Pid + ":" + rule.Level;
+                    if (!ruleApplied.Add(key)) continue;   // set each process once; don't fight an app that resets itself
+                    try
+                    {
+                        using (var p = Process.GetProcessById(r.Pid))
+                            if (string.Equals(p.ProcessName, r.Name, StringComparison.OrdinalIgnoreCase))
+                            {
+                                p.PriorityClass = rule.Level;
+                                int c;
+                                changed.TryGetValue(r.Name, out c);
+                                changed[r.Name] = c + 1;
+                            }
+                    }
+                    catch { }
                 }
-                if (n > 0) Log(string.Format("Raised {0} Chrome process(es) to Above normal priority so Quantman stays smooth.", n));
+                foreach (var kv in changed)
+                    Log(string.Format("Priority rule: set {0} {1} process(es) to {2}.", kv.Value, kv.Key, LevelText(RuleFor(kv.Key).Level)));
             }
 
             var next = new Dictionary<int, int>();
@@ -2279,7 +2462,7 @@ namespace TaskManagerLite
                     hogCount.TryGetValue(r.Pid, out c);
                     next[r.Pid] = ++c;
                     if (c < 3 || r.Priority != "Normal" || lowered.Contains(r.Pid) || r.Pid == fg || r.Pid == self ||
-                        Protected.Contains(r.Name) || r.Name.Equals("chrome", StringComparison.OrdinalIgnoreCase)) continue;
+                        Protected.Contains(r.Name) || r.Name.Equals("chrome", StringComparison.OrdinalIgnoreCase) || RuleFor(r.Name) != null) continue;
                     lowered.Add(r.Pid);
                     try
                     {
@@ -2713,6 +2896,22 @@ namespace TaskManagerLite
             chkAutoUpdate.Checked = flag("autoupdate", true);
             chkAutoTrim.Checked = flag("autotrim", false);
             chkTrimChrome.Checked = flag("trimchrome", false);
+            rules.Clear();
+            string pa;
+            if (d.TryGetValue("priorityapps", out pa))
+            {
+                foreach (var part in pa.Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var kv = part.Split(':');
+                    ProcessPriorityClass lvl;
+                    if (kv.Length == 2 && kv[0].Trim().Length > 0 && Enum.TryParse(kv[1].Trim(), out lvl) && Array.IndexOf(LevelValues, lvl) >= 0 &&
+                        !Protected.Contains(kv[0].Trim()) && RuleFor(kv[0].Trim()) == null)
+                        rules.Add(new PriorityRule { Name = kv[0].Trim(), Level = lvl });
+                }
+            }
+            else rules.Add(new PriorityRule { Name = "chrome", Level = ProcessPriorityClass.AboveNormal });   // first run: Chrome (Quantman)
+            RefreshRulesList();
+            chkBoostMirror.Checked = chkBoost.Checked;
             try
             {
                 using (var k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))
@@ -2744,7 +2943,8 @@ namespace TaskManagerLite
                     "boostchrome=" + (chkBoost.Checked ? "1" : "0"),
                     "autoupdate=" + (chkAutoUpdate.Checked ? "1" : "0"),
                     "autotrim=" + (chkAutoTrim.Checked ? "1" : "0"),
-                    "trimchrome=" + (chkTrimChrome.Checked ? "1" : "0") };
+                    "trimchrome=" + (chkTrimChrome.Checked ? "1" : "0"),
+                    "priorityapps=" + string.Join("|", rules.Select(r => r.Name + ":" + r.Level)) };
                 if (WindowState == FormWindowState.Normal && Visible) { lines.Add("width=" + Width); lines.Add("height=" + Height); }
                 File.WriteAllLines(settingsPath, lines.ToArray());
             }

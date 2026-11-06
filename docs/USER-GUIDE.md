@@ -31,7 +31,7 @@ What it checks every refresh: committed memory and RAM (80% and 90%), CPU busy f
 **Auto-troubleshoot switches:**
 - *Notify me about problems*: a tray pop-up for warnings, at most once every 30 minutes per issue.
 - *Auto-lower background CPU hogs*: an app above 30% CPU for three refreshes (not Chrome, not the app you're using) is set to Below normal.
-- *Give Chrome (Quantman) priority*: Chrome processes run at Above normal.
+- *Apply my app priority rules*: keeps your **Priority apps** (see Settings) at the priority you chose.
 
 Everything the app does is listed in the **Activity log** (also saved to `data\troubleshoot.log`). Priority changes reset when the app restarts.
 
@@ -51,7 +51,17 @@ Needs Claude Code installed and signed in (run `claude` once in a terminal to si
 - Claude can't run commands or change anything; it only answers.
 
 ## 6. Settings
-Theme · Always on top · Minimize to tray · Start with Windows (minimized) · Claude model · Install updates automatically · Check for updates · Rebuild now · Open program folder.
+Theme · Always on top · Minimize to tray · Start with Windows (minimized) · Claude model · **Priority apps** · Install updates automatically · Check for updates · Rebuild now · Open program folder.
+
+### Priority apps (add / delete)
+Keep the apps that matter most running smoothly.
+- **Add**: type the process name as shown in the Processes list (for example `chrome`, `Code`, `python`; `.exe` is optional), choose a priority, and click **Add / update** (or press Enter). To change an app's level, select it, pick a new level and click **Add / update** again.
+- **Add from the list**: on the Processes page, right-click a process → **Add to priority apps** → choose a level.
+- **Delete**: select one or more apps and click **Delete selected** (or press Delete). You can set their running copies back to Normal straight away.
+- **Levels**: *High* (use sparingly; it can make Windows less responsive), *Above normal* (recommended for Chrome/Quantman and your editor), *Below normal* or *Low* (background work such as agents or sync tools).
+- Apps set to High or Above normal are never auto-lowered or trimmed.
+- The rules apply while the switch *Apply my priority apps* is on (in Settings and in Smart Advisor; adding an app turns it on). New processes of a listed app are set within one refresh.
+- Core Windows processes can't be added.
 
 ## 7. Updating
 Edit `src\TaskManagerLite.cs` and raise `Version` (for example `2.1.0` → `2.1.1`). Within 30 minutes, or at the next start, the app rebuilds itself and restarts. If the build fails, the current version keeps running and the error is shown in Settings and `data\update.log`.
