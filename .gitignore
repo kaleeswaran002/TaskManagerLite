@@ -1,0 +1,6 @@
+# build output (publish the .exe through GitHub Releases, not in the repo)
+*.exe
+*.pdb
+# personal settings and logs created at runtime
+settings.ini
+data/
